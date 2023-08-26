@@ -1,4 +1,4 @@
-﻿Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 $source = Get-Content -Path "$pwd/puzzles10k.txt"
@@ -19,6 +19,8 @@ $script:movemode = $false
 $script:movelayer = 0
 $script:jumpmode = $false
 
+$script:helpmenutoggle = $false
+
 $win = new-object System.Windows.Forms.Form
 $linepen = new-object Drawing.pen "#000000"
 $cellforeground = new-object Drawing.SolidBrush "#ffffff"
@@ -29,6 +31,7 @@ $victory = new-object Drawing.SolidBrush "#66ff66"
 $besttimebrush = new-object Drawing.SolidBrush "#00e600"
 $complete = new-object Drawing.SolidBrush "#00cc00"
 $failure = new-object Drawing.SolidBrush "#ff4d4d"
+$transparentbackground = [Drawing.SolidBrush]::New([Drawing.Color]::FromArgb(100, 204, 204, 204))
 
 $numbrush = new-object Drawing.SolidBrush "#000000"
 $numbrushwritten = new-object Drawing.SolidBrush "#666666"
@@ -202,6 +205,14 @@ function draw_num_counts {
 }
 
 function draw_puzzle {
+    if ($script:highlighting -eq 1 -and $cells[$selected[0]][$selected[1]] -ne 10 -and $cells[$selected[0]][$selected[1]] -ne 0) {
+        & highlight_nums $cells[$selected[0]][$selected[1]] 0
+    } elseif ($script:highlighting -eq 2) {
+        & highlight_coverage $selected[0] $selected[1] 0
+    } else {
+        & draw_cell $selected[0] $selected[1] $cells[$selected[0]][$selected[1]] 0
+    }
+    
     $wingraphics.FillRectangle($cellforeground, $xoff, $yoff, 9*$CELLSIZE, 9*$CELLSIZE)
     for ($x = 0; $x -ne $rows; $x++) {
         for ($y = 0; $y -ne $cols; $y++) {
@@ -500,6 +511,27 @@ function draw_jump_mode {
     }
 }
 
+function draw_help_menu {
+    $wingraphics.FillRectangle($transparentbackground,0,0,600,600)
+    $wingraphics.FillRectangle($cellforeground, 195, 50, 210, 400)
+
+    $wingraphics.DrawRectangle($linepen, 195, 50, 210, 400)
+
+    $wingraphics.DrawString("Help Menu", $buttonfont, $numbrush, 260, 60)
+    $wingraphics.DrawLine($linepen, 245, 77, 355, 77)
+
+    $wingraphics.DrawString("Toggle Move Mode with Shift", $statsfont, $numbrushwritten, 210, 90)
+    $wingraphics.DrawString("With move mode, use the", $statsfont, $numbrushwritten, 210, 120)
+    $wingraphics.DrawString("numpad to pick a 3x3 box,", $statsfont, $numbrushwritten, 210, 140)
+    $wingraphics.DrawString("then pick a cell and place", $statsfont, $numbrushwritten, 210, 160)
+    $wingraphics.DrawString("a number", $statsfont, $numbrushwritten, 210, 180)
+
+    $wingraphics.DrawString("Toggle Jump Mode with Tab", $statsfont, $numbrushwritten, 210, 250)
+    $wingraphics.DrawString("In Jump Mode, arrow keys", $statsfont, $numbrushwritten, 210, 280)
+    $wingraphics.DrawString("jump between 3x3 boxes", $statsfont, $numbrushwritten, 210, 300)
+    $wingraphics.DrawString("instead of cells", $statsfont, $numbrushwritten, 210, 320)
+}
+
 function update_cell_value {
     param (
         $x,
@@ -562,6 +594,26 @@ $win.Add_KeyDown({
     $numpads = "NumPad7", "NumPad8", "NumPad9", "NumPad4", "NumPad5", "NumPad6", "NumPad1", "NumPad2", "NumPad3"
     $numpadsidx = "NumPad1", "NumPad2", "NumPad3", "NumPad4", "NumPad5", "NumPad6", "NumPad7", "NumPad8", "NumPad9" 
     $numkeys = "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9" 
+
+    if ($key -eq "Escape") {
+        $script:helpmenutoggle = -not $script:helpmenutoggle
+    
+        if ($script:helpmenutoggle) {
+            $script:timer.Enabled = $false
+            & draw_help_menu
+        } else {
+            $win.Refresh()
+            if ($script:puzzle -ne -1) { 
+                $script:timer.Enabled = $true
+            }
+        }
+
+        return
+    }
+
+    if ($script:helpmenutoggle) {
+      return
+    }
 
     if ($key -eq "Tab") {
         $script:jumpmode = -not $script:jumpmode
