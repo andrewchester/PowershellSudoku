@@ -20,8 +20,16 @@ $script:movelayer = 0
 $script:jumpmode = $false
 
 $script:helpmenutoggle = $false
+$script:zentoggle = $false
 
 $win = new-object System.Windows.Forms.Form
+$win.FormBorderStyle = 'FixedDialog'
+$win.Text = "Sudoku"
+$win.Width = 600
+$win.Height = 600
+$win.BackColor = "#ffffff"
+$win.AutoSize = $true
+
 $linepen = new-object Drawing.pen "#000000"
 $cellforeground = new-object Drawing.SolidBrush "#ffffff"
 $cellbackground = new-object Drawing.SolidBrush "#aaa1a1"
@@ -39,12 +47,6 @@ $font = new-object System.Drawing.Font Consolas,24
 $buttonfont = new-object System.Drawing.Font Consolas,11
 $statsfont = new-object System.Drawing.Font Consolas,9
 $titlefont = new-object System.Drawing.Font Consolas,30
-
-$win.Text = "Sudoku"
-$win.Width = 600
-$win.Height = 600
-$win.BackColor = "#ffffff"
-$win.AutoSize = $true
 
 $CELLSIZE = 40
 $rows = 9
@@ -71,7 +73,9 @@ $script:timer.Add_Tick({
         $script:time++
     }
     
-    & draw_time
+    if (-not $script:zentoggle) {
+        & draw_time
+    }
 })
 
 function draw_cell {
@@ -379,7 +383,7 @@ function draw_buttons {
     } elseif ($script:highlighting -eq 2) {
         $wingraphics.DrawString("Highlighting: coverage", $buttonfont, $numbrush, $xoff+($CELLSIZE*2)+22, $yoff+($CELLSIZE*9)+14)
     } else {
-        $wingraphics.DrawString("Highlighting: off     ", $buttonfont, $numbrush, $xoff+($CELLSIZE*2)+22, $yoff+($CELLSIZE*9)+14)
+        $wingraphics.DrawString("Highlighting: off     ", $buttonfont, $numbrush, $xoff+($CELLSIZE*2)+42, $yoff+($CELLSIZE*9)+14)
     }
 
     if ($selected[1] -eq 9 -and $selected[0] % 3 -eq 2) {
@@ -434,6 +438,10 @@ function highlight_nums {
         $n, $state
     )
 
+    if ($selected[1] -lt 0 -or $selected[1] -gt 8) {
+        return
+    }
+
     if ($n -eq 0 -or $n -eq 10) {
         return
     }
@@ -452,6 +460,7 @@ function highlight_nums {
     if ($state -eq 1) {
         & draw_cell $selected[0] $selected[1] $cells[$selected[0]][$selected[1]] 3
     }
+
     & draw_grid
 }
 
@@ -459,6 +468,10 @@ function highlight_coverage {
     param (
         $x, $y, $state
     )
+
+    if ($selected[1] -ge 0 -and $selected[1] -le 8) {
+        return
+    }
 
     $sq = ([Math]::Floor($y/3)*3) + [Math]::Floor($x/3)
 
@@ -481,6 +494,19 @@ function highlight_coverage {
     }
 
     & draw_grid
+}
+
+function apply_highlighting {
+    param (
+        $state
+    )
+
+    & draw_cell $selected[0] $selected[1] $cells[$selected[0]][$selected[1]] $state
+    if ($script:highlighting -eq 1) {
+        & highlight_nums $cells[$selected[0]][$selected[1]] $state
+    } elseif ($script:highlighting -eq 2) {
+        & highlight_coverage $selected[0] $selected[1] $state
+    }
 }
 
 function draw_move_mode {
@@ -530,6 +556,9 @@ function draw_help_menu {
     $wingraphics.DrawString("In Jump Mode, arrow keys", $statsfont, $numbrushwritten, 210, 280)
     $wingraphics.DrawString("jump between 3x3 boxes", $statsfont, $numbrushwritten, 210, 300)
     $wingraphics.DrawString("instead of cells", $statsfont, $numbrushwritten, 210, 320)
+
+    $wingraphics.DrawString("press h to get a hint", $statsfont, $numbrushwritten, 210, 360)
+    $wingraphics.DrawString("press n for a new puzzle", $statsfont, $numbrushwritten, 210, 380)
 }
 
 function update_cell_value {
@@ -632,6 +661,45 @@ $win.Add_KeyDown({
     }
 
     if ($key -eq "Return" -and $selected[0] -ge 0 -and $selected[0] -le 8 -and $selected[1] -ge 0 -and $selected[1] -le 8) {
+        if ($script:zentoggle) {
+            $selected[0] = 4
+            $selected[0] = 4
+
+            $result = & check_answer
+
+            if ($result -eq $true) {
+                $script:won = 2
+                $script:timer.Enabled = $false
+                $script:successes++
+                
+                if ($script:besttime -gt $script:time) {
+                    $script:besttime = $script:time
+                }
+                if ($script:worsttime -lt $script:time) {
+                    $script:worsttime = $script:time
+                }
+            
+                $script:averagetime = [Math]::Floor((($script:averagetime*($script:successes+$script:failures-1))+$script:time)/($script:successes+$script:failures))
+                $script:time = 0
+                
+                & load_puzzle 1
+            } else {
+                $script:failures++
+                $script:won = 1
+            }
+
+            $script:winrate = [Math]::Floor(100*($script:successes/($script:failures+$script:successes)))
+
+            $script:movemode = -not $script:movemode
+            $script:movelayer = 0
+            
+            if ($script:movemode) {
+                $script:movelayer = 1
+            }
+
+            return
+        }
+        
         if ($script:highlighting -eq 1) {
             & highlight_nums $cells[$selected[0]][$selected[1]] 0
         } else {
@@ -642,7 +710,7 @@ $win.Add_KeyDown({
         $selected[1] = -1
     }
 
-    if ($key -eq "Return" -and $selected[1] -eq -1 -and ($selected[0] % 3) -eq 0) {
+    if (($key -eq "Return" -and $selected[1] -eq -1 -and ($selected[0] % 3) -eq 0) -or ($key -eq "N" -and $selected[1] -ge 0 -and $selected[1] -le 8)) {
         $script:won = 0
         $script:hints = 3
         $selected[0] = 4
@@ -699,19 +767,34 @@ $win.Add_KeyDown({
         & draw_stats
     }
 
-    if (($key -eq "Return" -and $selected[1] -eq 9 -and $selected[0] % 2 -eq 0 -and $script:hints -gt 0) -or $key -eq "H") {
+    if ((($key -eq "Return" -and $selected[1] -eq 9 -and $selected[0] % 3 -eq 0) -or ($key -eq "H" -and $selected[1] -ge 0 -and $selected[1] -le 8)) -and $script:hints -gt 0) {
         & give_hint
         & draw_buttons
         & draw_puzzle
     }
 
-    if ($key -eq "Return" -and $selected[1] -eq 9 -and $selected[0] %2 -eq 1) {
+    if ($key -eq "Return" -and $selected[1] -eq 9 -and $selected[0]%3 -eq 1) {
         if ($script:highlighting -eq 2) {
             $script:highlighting = 0
         } else {
             $script:highlighting++
         }
         & draw_buttons
+    }
+
+    if ($key -eq "Return" -and $selected[1] -eq 9 -and $selected[0]%3 -eq 2) {
+        $selected[0] = 4
+        $selected[1] = 4
+        $script:zentoggle = $true
+        
+        $wingraphics.FillRectangle($cellforeground, 0,0,600,600)
+        
+        if ($script:puzzle -eq -1) {
+            & load_puzzle 1
+        } else {
+            & draw_puzzle
+        }
+        return
     }
 
     if ($key -eq "Space" -or $key -eq "NumPad0" -or $key -eq "D0") {
@@ -834,12 +917,7 @@ $win.Add_KeyDown({
     }
 
     if (-not $script:movemode -and ($key -eq "Right" -or $key -eq "d") -and $selected[0] -le ($rows-1)) { 
-        & draw_cell $selected[0] $selected[1] $cells[$selected[0]][$selected[1]] 0
-        if ($script:highlighting -eq 1) {
-            & highlight_nums $cells[$selected[0]][$selected[1]] 0
-        } elseif ($script:highlighting -eq 2) {
-            & highlight_coverage $selected[0] $selected[1] 0
-        }
+        & apply_highlighting 0
         
         if ($script:jumpmode) {
             $sq = [Math]::Floor($selected[0]/3)+([Math]::Floor($selected[1]/3)*3)
@@ -877,20 +955,10 @@ $win.Add_KeyDown({
             return
         }
 
-        & draw_cell $selected[0] $selected[1] $cells[$selected[0]][$selected[1]] 1
-        if ($script:highlighting -eq 1) {
-            & highlight_nums $cells[$selected[0]][$selected[1]] 1
-        } elseif ($script:highlighting -eq 2) {
-            & highlight_coverage $selected[0] $selected[1] 1
-        }
+        & apply_highlighting 1
     } 
     if (-not $script:movemode -and ($key -eq "Left" -or $key -eq "a") -and $selected[0] -ge 0) {
-        & draw_cell $selected[0] $selected[1] $cells[$selected[0]][$selected[1]] 0
-        if ($script:highlighting -eq 1) {
-            & highlight_nums $cells[$selected[0]][$selected[1]] 0
-        } elseif ($script:highlighting -eq 2) {
-            & highlight_coverage $selected[0] $selected[1] 0
-        }
+        & apply_highlighting 0
 
         if ($script:jumpmode) {
             $sq = [Math]::Floor($selected[0]/3)+([Math]::Floor($selected[1]/3)*3)
@@ -929,20 +997,15 @@ $win.Add_KeyDown({
             return
         }
 
-        & draw_cell $selected[0] $selected[1] $cells[$selected[0]][$selected[1]] 1
-        if ($script:highlighting -eq 1) {
-            & highlight_nums $cells[$selected[0]][$selected[1]] 1
-        } elseif ($script:highlighting -eq 2) {
-            & highlight_coverage $selected[0] $selected[1] 1
-        }
+        & apply_highlighting 1
     }
     if (-not $script:movemode -and ($key -eq "Down" -or $key -eq "s") -and $selected[1] -le ($cols)) {
-        & draw_cell $selected[0] $selected[1] $cells[$selected[0]][$selected[1]] 0
-        if ($script:highlighting -eq 1) {
-            & highlight_nums $cells[$selected[0]][$selected[1]] 0
-        } elseif ($script:highlighting -eq 2) {
-            & highlight_coverage $selected[0] $selected[1] 0
+        if ($selected[1] -eq 8 -and $script:zentoggle) {
+            $script:zentoggle = $false
+            $win.Refresh()
         }
+        
+        & apply_highlighting 0
 
         if ($script:jumpmode) {
             $sq = [Math]::Floor($selected[0]/3)+([Math]::Floor($selected[1]/3)*3)
@@ -972,35 +1035,27 @@ $win.Add_KeyDown({
         if ($selected[1] -eq $cols) {
             $selected[1] = -1
             $selected[0] = 0
+            & draw_buttons
         } else {
             $selected[1]++
+
+            if ($selected[1] -eq 9) {
+                $selected[0] = 0
+                & draw_buttons
+            }
         }
 
-        if ($selected[1] -eq 0) {
-            $selected[0] = 0
-            & draw_buttons
-            & draw_puzzle
-        } elseif ($selected[1] -eq -1 -or $selected[1] -eq 9) {
-            $selected[0] = 0
-            & draw_buttons
-            & draw_grid
+        & apply_highlighting 1
+    }
+    if (-not $script:movemode -and ($key -eq "Up" -or $key -eq "w") -and $selected[1] -ge -1) {
+        if ($selected[1] -eq 0 -and $script:zentoggle) {
+            $selected[1]--
+            $script:zentoggle = $false
+            $win.Refresh()
             return
         }
 
-        & draw_cell $selected[0] $selected[1] $cells[$selected[0]][$selected[1]] 1
-        if ($script:highlighting -eq 1) {
-            & highlight_nums $cells[$selected[0]][$selected[1]] 1
-        } elseif ($script:highlighting -eq 2) {
-            & highlight_coverage $selected[0] $selected[1] 1
-        }
-    }
-    if (-not $script:movemode -and ($key -eq "Up" -or $key -eq "w") -and $selected[1] -ge -1) {
-        & draw_cell $selected[0] $selected[1] $cells[$selected[0]][$selected[1]] 0
-        if ($script:highlighting -eq 1) {
-            & highlight_nums $cells[$selected[0]][$selected[1]] 0
-        } elseif ($script:highlighting -eq 2) {
-            & highlight_coverage $selected[0] $selected[1] 0
-        }
+        & apply_highlighting 0
             
         if ($script:jumpmode) {
             $sq = [Math]::Floor($selected[0]/3)+([Math]::Floor($selected[1]/3)*3)
@@ -1030,34 +1085,32 @@ $win.Add_KeyDown({
         if ($selected[1] -eq -1) {
             $selected[1] = 9
             $selected[0] = 0
+            & draw_buttons
         } else {
             $selected[1]--
+
+            if ($selected[1] -eq -1) {
+                $selected[0] = 0
+                & draw_buttons
+                & draw_grid
+            } elseif ($selected[1] -eq 8) {
+                $selected[0] = 0
+                & draw_puzzle
+            }
         }
 
         if ($selected[1] -eq -1 -or $selected[1] -eq 9) {
             $selected[0] = 0
             & draw_buttons
-            & draw_grid
-            return
         } elseif($selected[1] -eq 8) {
             $selected[0] = 0
             & draw_buttons
             & draw_puzzle
         }
 
-        & draw_cell $selected[0] $selected[1] $cells[$selected[0]][$selected[1]] 1
-        if ($script:highlighting -eq 1) {
-            & highlight_nums $cells[$selected[0]][$selected[1]] 1
-        } elseif ($script:highlighting -eq 2) {
-            & highlight_coverage $selected[0] $selected[1] 1
-        }
+        & apply_highlighting 1
     }
 
-    if ($selected[1] -eq -1 -or $selected[1] -eq 9) {
-        & draw_buttons
-    }
-
-    & draw_num_counts
     & draw_grid
 })
 
